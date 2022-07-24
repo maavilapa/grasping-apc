@@ -48,16 +48,21 @@ def parse_args():
     parser.add_argument('--agnostic_segmentation', type=int, default=0, help='True if using agnostic segmentation to detect objects in the bin')
     parser.add_argument('--bin_segmentation', type=int, default=1, help='Segment bin with retina net before objects detection')
     parser.add_argument('--load_files', type=int, default=1, help='True if using saved rbg and depth images')
-    parser.add_argument('--rgb_path', type=str, default='imagenes/rgb15.jpg' , help='Path to rgb image')
-    parser.add_argument('--depth_path', type=str, default='imagenes/depth15.jpg' , help='Path to depth image')
+    parser.add_argument('--rgb_path', type=str, default='imagenes/rgb17.jpg' , help='Path to rgb image')
+    parser.add_argument('--depth_path', type=str, default='imagenes/depth17.jpg' , help='Path to depth image')
     parser.add_argument('--box_index', type=int, default=0, help='object to use for grasp prediction')
     parser.add_argument('--obj_zoom', type=float, default=0.25, help='zoom of object segmentation rectangles')
-    parser.add_argument('--bin_zoom', type=float, default=0.1, help='zoom of bin segmentation rectangle')
+    parser.add_argument('--bin_zoomx', type=float, default=0, help='zoom of bin segmentation rectangle')
+    parser.add_argument('--bin_zoomy', type=float, default=0, help='zoom of bin segmentation rectangle')
+    parser.add_argument('--off_x', type=float, default=0.02, help='offset x percentage between Depth and RGB')
+    parser.add_argument('--off_y', type=float, default=0.045, help='offset y percentage between Depth and RGB')
+
     parser.add_argument('--threshold', type=float, default=0.75, help='Initial threshold for grasping')
     parser.add_argument('--use_masks', type=int, default=0, help='If using masks after image segmentation')
     parser.add_argument('--preprocess', type=int, default=1, help='preprocessing depth image')
     parser.add_argument('--show_obj', type=int, default=1, help='if show detected objects')
     parser.add_argument('--mask_factor', type=int, default=10, help='Dilation size')
+    parser.add_argument('--confidence', type=int, default=0.7, help='Confidence value agnostic segmentation')
 
 
     args = parser.parse_args()
@@ -114,9 +119,9 @@ def predict_grasps(depth_img,  filters=(5.0, 3.0, 1.0), width_scale=70, preproce
   #ix=detections['detection_boxes'][0][0][1]
   #iy=detections['detection_boxes'][0][0][0]
   #depth_crop = depth_img[ix+roi[1]:ix+roi[3],iy+roi[0]:iy+roi[2]]
-  #depth_crop=depth_img/3
+  #depth_crop=depth_img/10
 
-  depth_crop = cv2.resize(depth_img, (400, 400))
+  depth_crop = cv2.resize(depth_img, (300, 300))
   if preprocess:
     depth_crop = cv2.copyMakeBorder(depth_crop, 1, 1, 1, 1, cv2.BORDER_DEFAULT)
     depth_nan_mask = np.isnan(depth_crop).astype(np.uint8)
@@ -148,7 +153,7 @@ def predict_grasps(depth_img,  filters=(5.0, 3.0, 1.0), width_scale=70, preproce
 
 
 def detect_grasps(q_img, ang_img, threshold, width_img=None, no_grasps=10):
-    is_peak = peak_local_max(q_img, min_distance=25, threshold_abs=threshold, indices=False)
+    is_peak = peak_local_max(q_img, min_distance=30, threshold_abs=threshold, indices=False)
     labels = label(is_peak)[0]
     merged_peaks = center_of_mass(is_peak, labels, range(1, np.max(labels)+1))
     local_max = np.array(merged_peaks)
@@ -283,16 +288,22 @@ def main():
     detection_model=create_retina(num_classes=1, pipeline_config = 'models/retina_config/config/pipeline.config', checkpoint_path = "models/retina_config/checkpoint/ckpt-1") 
     input_tensor = tf.convert_to_tensor(np.expand_dims(rgb_img, axis=0), dtype=tf.float32)
     detections = detect(detection_model,input_tensor)
+    off_x=args.off_x
+    off_y=args.off_y
+    x1=detections['detection_boxes'][0][0][1]+off_x
+    x2=detections['detection_boxes'][0][0][3]+off_x
+    y1=detections['detection_boxes'][0][0][0]-off_y
+    y2=detections['detection_boxes'][0][0][2]-off_y
+    detections = {"detection_boxes": [[[y1+(y2-y1)*args.bin_zoomy, x1+(x2-x1)*args.bin_zoomx, y2-(y2-y1)*args.bin_zoomy, x2-(x2-x1)*args.bin_zoomx]]]}
   else:
     detections = {"detection_boxes": [[[0, 0, 1, 1]]]}
 
   #print(detections)
+
   shape=rgb_img.shape
-  bin_img=rgb_img[int(shape[0]*detections['detection_boxes'][0][0][0]):int(shape[0]*detections['detection_boxes'][0][0][2]),int(shape[1]*detections['detection_boxes'][0][0][1]):int(shape[1]*detections['detection_boxes'][0][0][3])]
+  bin_img=rgb_img[int(shape[0]*(detections['detection_boxes'][0][0][0]+off_y)):int(shape[0]*(detections['detection_boxes'][0][0][2]+off_y)),int(shape[1]*(detections['detection_boxes'][0][0][1]-off_x)):int(shape[1]*(detections['detection_boxes'][0][0][3]-off_x))]
   bin_img_depth=depth_img[int(shape[0]*detections['detection_boxes'][0][0][0]):int(shape[0]*detections['detection_boxes'][0][0][2]),int(shape[1]*detections['detection_boxes'][0][0][1]):int(shape[1]*detections['detection_boxes'][0][0][3])]
 
-
-  zoom_b = args.bin_zoom
   #bin_img=bin_img[46:210,42:324]
   #bin_img_depth=bin_img_depth[46:210,42:324]  
 
@@ -309,7 +320,7 @@ def main():
     plt.show()
   if args.agnostic_segmentation:
     MODEL_PATH="models/FAT_trained_Ml2R_bin_fine_tuned.pth"
-    predictions = agnostic_segmentation.segment_image(bin_img, MODEL_PATH, confidence=0.9)
+    predictions = agnostic_segmentation.segment_image(bin_img, MODEL_PATH, confidence=args.confidence)
     pred_boxes={}
     for i in range(len(predictions["instances"])):
       pred_boxes[i]=predictions["instances"][i].get_fields()["pred_boxes"].tensor.numpy()[0]
@@ -385,7 +396,7 @@ def main():
   plt.show()
 
 
-  points_out, ang_out, width_out=predict_grasps(bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]], filters=(9.0, 5.0, 5.0), width_scale=100, preprocess=args.preprocess)
+  points_out, ang_out, width_out=predict_grasps(bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]], filters=(5.0, 3.0, 2.0), width_scale=120, preprocess=args.preprocess)
   points_out = cv2.resize(points_out, (roi[2]-roi[0], roi[3]-roi[1]))
   ang_out = cv2.resize(ang_out, (roi[2]-roi[0], roi[3]-roi[1]))
   width_out = cv2.resize(width_out, (roi[2]-roi[0], roi[3]-roi[1]))
