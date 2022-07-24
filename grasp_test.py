@@ -62,7 +62,7 @@ def parse_args():
     parser.add_argument('--preprocess', type=int, default=1, help='preprocessing depth image')
     parser.add_argument('--show_obj', type=int, default=1, help='if show detected objects')
     parser.add_argument('--mask_factor', type=int, default=10, help='Dilation size')
-    parser.add_argument('--confidence', type=int, default=0.5, help='Confidence value agnostic segmentation')
+    parser.add_argument('--confidence', type=float, default=0.3, help='Confidence value agnostic segmentation')
 
 
     args = parser.parse_args()
