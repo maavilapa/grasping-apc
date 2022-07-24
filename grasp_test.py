@@ -36,7 +36,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 ##### Upload GGCNN model
-device2 = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# device2 = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device2 = "cpu"
 MODEL_FILE = 'ggcnn/ggcnn2_093'
 model = torch.load(MODEL_FILE, map_location=device2)
 
@@ -58,6 +59,7 @@ def parse_args():
     parser.add_argument('--preprocess', type=int, default=1, help='preprocessing depth image')
     parser.add_argument('--show_obj', type=int, default=1, help='if show detected objects')
     parser.add_argument('--mask_factor', type=int, default=10, help='Dilation size')
+    parser.add_argument('--obj_det_conf', type=float, default=0.5, help='Confidence to detect object agnostic')
 
 
     args = parser.parse_args()
@@ -309,7 +311,7 @@ def main():
     plt.show()
   if args.agnostic_segmentation:
     MODEL_PATH="models/FAT_trained_Ml2R_bin_fine_tuned.pth"
-    predictions = agnostic_segmentation.segment_image(bin_img, MODEL_PATH, confidence=0.9)
+    predictions = agnostic_segmentation.segment_image(bin_img, MODEL_PATH, confidence = args.obj_det_conf)
     pred_boxes={}
     for i in range(len(predictions["instances"])):
       pred_boxes[i]=predictions["instances"][i].get_fields()["pred_boxes"].tensor.numpy()[0]
