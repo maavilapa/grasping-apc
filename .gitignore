@@ -1,0 +1,8 @@
+*.pth
+*.jpg
+*.png
+*.txt
+*.tiff
+/content
+models/FAT_trained_Ml2R_bin_fine_tuned.pth
+models/retina_config/
