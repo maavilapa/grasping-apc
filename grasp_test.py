@@ -62,7 +62,7 @@ def parse_args():
     parser.add_argument('--preprocess', type=int, default=1, help='preprocessing depth image')
     parser.add_argument('--show_obj', type=int, default=1, help='if show detected objects')
     parser.add_argument('--mask_factor', type=int, default=10, help='Dilation size')
-    parser.add_argument('--confidence', type=int, default=0.7, help='Confidence value agnostic segmentation')
+    parser.add_argument('--confidence', type=int, default=0.5, help='Confidence value agnostic segmentation')
 
 
     args = parser.parse_args()
@@ -130,7 +130,7 @@ def predict_grasps(depth_img,  filters=(5.0, 3.0, 1.0), width_scale=70, preproce
     depth_scale = np.abs(depth_crop).max()
     depth_crop = depth_crop.astype(np.float32) / depth_scale 
     # with TimeIt('Inpainting'):
-    depth_crop = cv2.inpaint(depth_crop, depth_nan_mask, 1, cv2.INPAINT_NS)
+    depth_crop = cv2.inpaint(depth_crop, depth_nan_mask, 5, cv2.INPAINT_NS)
     depth_crop = depth_crop[1:-1, 1:-1]
     depth_crop = depth_crop * depth_scale
     depth_crop = np.clip((depth_crop - depth_crop.mean()), -1, 1)
