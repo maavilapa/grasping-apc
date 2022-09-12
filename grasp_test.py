@@ -6,6 +6,7 @@ from pyrsistent import b
 import scipy.ndimage as ndimage
 import numpy as np
 from scipy import ndimage
+#import roboticstoolbox as rtb
 
 
 import tensorflow as tf
@@ -39,8 +40,16 @@ warnings.filterwarnings("ignore")
 device2 = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 MODEL_FILE = 'ggcnn/ggcnn2_093'
 model = torch.load(MODEL_FILE, map_location=device2)
+#tf_matrix=[319.5, 239.5,525,525]
 
-tf_matrix=[319.5, 239.5,525,525]
+tf_matrix=[307.5, 290.6, 507.44, 509.47]
+A=np.array([[554.2547, 0, 320.5], [0, 554.2547, 240.5], [0,0,1]])
+#Tcam=transl(0.49, 0.25, 0).dot(trotz(np.pi/2)).dot(trotx(np.pi))
+mt=np.array([[1,0,0,0.62],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+m1=np.array([[0,-1,0,0],[1,0,0,0],[0,0,1,0],[0,0,0,1]])
+m2=np.array([[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,1]])
+Tcam=mt.dot(m1).dot(m2)
+#tf_matrix=[]
 
 
 def parse_args():
@@ -54,8 +63,10 @@ def parse_args():
     parser.add_argument('--obj_zoom', type=float, default=0.25, help='zoom of object segmentation rectangles')
     parser.add_argument('--bin_zoomx', type=float, default=0, help='zoom of bin segmentation rectangle')
     parser.add_argument('--bin_zoomy', type=float, default=0, help='zoom of bin segmentation rectangle')
-    parser.add_argument('--off_x', type=float, default=0.02, help='offset x percentage between Depth and RGB')
-    parser.add_argument('--off_y', type=float, default=0.045, help='offset y percentage between Depth and RGB')
+    parser.add_argument('--off_x', type=float, default=0, help='offset x percentage between Depth and RGB')
+    parser.add_argument('--off_y', type=float, default=0, help='offset y percentage between Depth and RGB')
+    #parser.add_argument('--off_x', type=float, default=12.8, help='offset x percentage between Depth and RGB')
+    #parser.add_argument('--off_y', type=float, default=21.6, help='offset y percentage between Depth and RGB')
 
     parser.add_argument('--threshold', type=float, default=0.75, help='Initial threshold for grasping')
     parser.add_argument('--use_masks', type=int, default=0, help='If using masks after image segmentation')
@@ -115,32 +126,118 @@ def create_retina(num_classes=2, pipeline_config=None, checkpoint_path=None):
   print('Weights restored!')
   return detection_model
 
-def predict_grasps(depth_img,  filters=(5.0, 3.0, 1.0), width_scale=70, preprocess=True ):
+def predict_grasps(depth_img,  filters=(5.0, 3.0, 1.0), width_scale=70, preprocess=True, new_size=300):
   #ix=detections['detection_boxes'][0][0][1]
   #iy=detections['detection_boxes'][0][0][0]
   #depth_crop = depth_img[ix+roi[1]:ix+roi[3],iy+roi[0]:iy+roi[2]]
-  #depth_crop=depth_img/10
+  depth_crop=depth_img.copy()
 
-  depth_crop = cv2.resize(depth_img, (300, 300))
+  #fig = plt.figure(figsize=(10, 10))
+  #ax = fig.add_subplot(1, 1, 1)
+  #ax.imshow(depth_crop, cmap='gray')
+  #ax.set_title('Depth orig')
+  #ax.axis('off')
+  #plt.show()
+
   if preprocess:
     depth_crop = cv2.copyMakeBorder(depth_crop, 1, 1, 1, 1, cv2.BORDER_DEFAULT)
+
+    #fig = plt.figure(figsize=(10, 10))
+    #ax = fig.add_subplot(1, 1, 1)
+    #ax.imshow(depth_crop, cmap='gray')
+    #ax.set_title('Depth border')
+    #ax.axis('off')
+    #plt.show()
+
     depth_nan_mask = np.isnan(depth_crop).astype(np.uint8)
     depth_crop[depth_nan_mask==1] = 0
+
+    #fig = plt.figure(figsize=(10, 10))
+    #ax = fig.add_subplot(1, 2, 1)
+    #ax.imshow(depth_crop, cmap='gray')
+    #ax.set_title('Depth NaNs')
+    #ax.axis('off')
+    #ax = fig.add_subplot(1, 2, 2)
+    #ax.imshow(depth_nan_mask, cmap='gray')
+    #ax.set_title('Depth NaN mask')
+    #ax.axis('off')
+    #plt.show()
+
     # Scale to keep as float, but has to be in bounds -1:1 to keep opencv happy.
     depth_scale = np.abs(depth_crop).max()
     depth_crop = depth_crop.astype(np.float32) / depth_scale 
+
+
+    #fig = plt.figure(figsize=(10, 10))
+    #ax = fig.add_subplot(1, 1, 1)
+    #ax.imshow(depth_crop, cmap='gray')
+    #ax.set_title('Depth scale')
+    #ax.axis('off')
+    #plt.show()
     # with TimeIt('Inpainting'):
     depth_crop = cv2.inpaint(depth_crop, depth_nan_mask, 1, cv2.INPAINT_NS)
+
+
+    #fig = plt.figure(figsize=(10, 10))
+    #ax = fig.add_subplot(1, 1, 1)
+    #ax.imshow(depth_crop, cmap='gray')
+    #ax.set_title('Depth inpaint')
+    #ax.axis('off')
+    #plt.show()
+
     depth_crop = depth_crop[1:-1, 1:-1]
+    
+    #fig = plt.figure(figsize=(10, 10))
+    ##ax = fig.add_subplot(1, 1, 1)
+    #ax.imshow(depth_crop, cmap='gray')
+    #ax.set_title('Depth border2')
+    #ax.axis('off')
+    #plt.show()
+
     depth_crop = depth_crop * depth_scale
+    
+    #fig = plt.figure(figsize=(10, 10))
+    #ax = fig.add_subplot(1, 1, 1)
+    #ax.imshow(depth_crop, cmap='gray')
+    #ax.set_title('Depth rescale')
+    #ax.axis('off')
+    #plt.show()
+
+    depth_crop = cv2.resize(depth_crop, (new_size, new_size), interpolation = cv2.INTER_AREA)
+    print("sh ",depth_crop.shape)
+    depth_nan_mask = depth_nan_mask[1:-1, 1:-1]
+    depth_nan_mask = cv2.resize(depth_nan_mask, (new_size, new_size), interpolation = cv2.INTER_NEAREST)
+
+    #fig = plt.figure(figsize=(10, 10))
+    #ax = fig.add_subplot(1, 2, 1)
+    #ax.imshow(depth_crop, cmap='gray')
+    #ax.set_title('Depth resize')
+    #ax.axis('off')
+    #ax = fig.add_subplot(1, 2, 2)
+    #ax.imshow(depth_nan_mask, cmap='gray')
+    #ax.set_title('Depth NaN mask resize')
+    #ax.axis('off')
+    #plt.show()
+
     depth_crop = np.clip((depth_crop - depth_crop.mean()), -1, 1)
-  depth = depth_crop
-  depthT = torch.from_numpy(depth.reshape(1, 1, depth.shape[0], depth.shape[1]).astype(np.float32)).to(device2)
+
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.imshow(depth_crop, cmap='gray')
+    ax.set_title('Depth clip')
+    ax.axis('off')
+    plt.show()
+
+  #depth = depth_crop
+  print(depth_crop.shape)
+  depthT = torch.from_numpy(depth_crop.reshape(1, 1, new_size, new_size).astype(np.float32)).to(device2)
 
 
   with torch.no_grad():
       pred_out = model(depthT)
   points_out = pred_out[0].cpu().numpy().squeeze()
+  points_out[depth_nan_mask] = 0
+
   cos_out = pred_out[1].cpu().numpy().squeeze()
   sin_out = pred_out[2].cpu().numpy().squeeze()
   ang_out = np.arctan2(sin_out, cos_out) / 2.0
@@ -149,7 +246,7 @@ def predict_grasps(depth_img,  filters=(5.0, 3.0, 1.0), width_scale=70, preproce
   ang_out = ndimage.filters.gaussian_filter(ang_out, filters[1])
   width_out = ndimage.filters.gaussian_filter(width_out, filters[2])
   points_out = np.clip(points_out, 0.0, 1.0-1e-3)
-  return points_out, ang_out, width_out
+  return points_out, ang_out, width_out, depth_crop.squeeze()
 
 
 def detect_grasps(q_img, ang_img, threshold, width_img=None, no_grasps=10):
@@ -200,23 +297,26 @@ def from_obj_frame(px, py, roi):
   return pxb, pyb
 
 def from_bin_frame(pxb, pyb, detections):
-  pxo=pxb+int(detections['detection_boxes'][0][0][1])
-  pyo=pyb+int(detections['detection_boxes'][0][0][0])
+  pxo=pxb+int(640*detections['detection_boxes'][0][0][1])
+  pyo=pyb+int(480*detections['detection_boxes'][0][0][0])
   return pxo, pyo
 
-def to_distance(u, v,z=1.3, mx=tf_matrix):
+def to_distance(u, v,z=1.2, mx=tf_matrix):
   cx, cy, fx, fy=mx
   x=(u-cx)*z/fx
   y=(v-cy)*z/fy
   return x,y
 
 def rvalues(grasp_info, depth, roi, detections):
-    px=grasp_info["pix"][0]
-    py=grasp_info["pix"][1]
+    px=grasp_info["pix"][1]
+    py=grasp_info["pix"][0]
 
     pxb, pyb=from_obj_frame(px,py, roi) 
-    pxo, pyo=from_bin_frame(pxb, pyb, detections)
-
+    print("Pixel canasto x: ", pxb)
+    print("Pixel canasto y: ", pyb)
+    pxo, pyo=from_bin_frame(pyb, pxb, detections)
+    print("Pixel original x: ", pxo)
+    print("Pixel original y: ", pyo)
     z = np.median(depth)
     x, y=to_distance(pxo, pyo)
     
@@ -249,12 +349,13 @@ def draw_angled_rec(x0, y0, width, height, angle, color, img):
 
 def main():
   args = parse_args()
-
+  args.box_index =input("box index: ")
+  args.box_index=int(args.box_index)
   ######Download data
   if args.load_files:
-    #depth_img = image.DepthImage.from_tiff(args.depth_path)
-    depth_img = image.Image.from_file(args.depth_path)
-    depth_img = np.asarray(depth_img)
+    depth_img = image.DepthImage.from_tiff(args.depth_path)
+    #depth_img = image.Image.from_file(args.depth_path)
+    depth_img = np.asarray(depth_img)/750
     rgb_img = image.Image.from_file(args.rgb_path)
     rgb_img =  np.asarray(rgb_img)
   else:
@@ -264,7 +365,8 @@ def main():
     rate = rospy.Rate(1) # ROS Rate at 5Hz
     print("waiting")
     rgbo = rospy.wait_for_message('/camera/rgb/image_color', Image)
-    deptho = rospy.wait_for_message('/camera/depth/image_raw', Image)
+    print("rgb")
+    deptho = rospy.wait_for_message('/camera/depth_registered/image', Image)
     depth_img = bridge.imgmsg_to_cv2(deptho)
     depth_img = np.asarray(depth_img)
     rgb_img = bridge.imgmsg_to_cv2(rgbo)
@@ -285,11 +387,14 @@ def main():
 
 
   if args.bin_segmentation:
-    detection_model=create_retina(num_classes=1, pipeline_config = 'models/retina_config/config/pipeline.config', checkpoint_path = "models/retina_config/checkpoint/ckpt-1") 
+    #detection_model=create_retina(num_classes=1, pipeline_config = 'models/retina_config/config/pipeline.config', checkpoint_path = "models/retina_config/checkpoint/ckpt-1") 
     input_tensor = tf.convert_to_tensor(np.expand_dims(rgb_img, axis=0), dtype=tf.float32)
     detections = detect(detection_model,input_tensor)
-    off_x=args.off_x
-    off_y=args.off_y
+    off_x=args.off_x/rgb_img.shape[1]
+    off_y=args.off_y/rgb_img.shape[0]
+    print(off_x/rgb_img.shape[1])
+    print("size in x", rgb_img.shape[1])
+    print("size in y", rgb_img.shape[0])
     x1=detections['detection_boxes'][0][0][1]+off_x
     x2=detections['detection_boxes'][0][0][3]+off_x
     y1=detections['detection_boxes'][0][0][0]-off_y
@@ -301,9 +406,15 @@ def main():
   #print(detections)
 
   shape=rgb_img.shape
-  bin_img=rgb_img[int(shape[0]*(detections['detection_boxes'][0][0][0]+off_y)):int(shape[0]*(detections['detection_boxes'][0][0][2]+off_y)),int(shape[1]*(detections['detection_boxes'][0][0][1]-off_x)):int(shape[1]*(detections['detection_boxes'][0][0][3]-off_x))]
+  if args.bin_segmentation==1:
+    bin_img=rgb_img[int(shape[0]*(detections['detection_boxes'][0][0][0]+off_y)):int(shape[0]*(detections['detection_boxes'][0][0][2]+off_y)),int(shape[1]*(detections['detection_boxes'][0][0][1]-off_x)):int(shape[1]*(detections['detection_boxes'][0][0][3]-off_x))]
+  else:
+    bin_img=rgb_img[int(shape[0]*(detections['detection_boxes'][0][0][0])):int(shape[0]*(detections['detection_boxes'][0][0][2])),int(shape[1]*(detections['detection_boxes'][0][0][1])):int(shape[1]*(detections['detection_boxes'][0][0][3]))]
+
   bin_img_depth=depth_img[int(shape[0]*detections['detection_boxes'][0][0][0]):int(shape[0]*detections['detection_boxes'][0][0][2]),int(shape[1]*detections['detection_boxes'][0][0][1]):int(shape[1]*detections['detection_boxes'][0][0][3])]
 
+  print("bin shape: ", bin_img.shape)
+  print("bin shape: ", bin_img_depth.shape)
   #bin_img=bin_img[46:210,42:324]
   #bin_img_depth=bin_img_depth[46:210,42:324]  
 
@@ -334,7 +445,7 @@ def main():
 
     roi_w=roi[3]-roi[1]
     roi_h=roi[2]-roi[0]
-    roi2=roi
+    roi2=roi.copy()
     if roi_w>roi_h:
       roi2[0]=roi2[0]+round(roi_h/2)-round(roi_w/2)
       roi2[2]=roi2[2]-round(roi_h/2)+round(roi_w/2)
@@ -343,14 +454,18 @@ def main():
       roi2[3]=roi2[3]-round(roi_w/2)+round(roi_h/2)
     print("New roi: ",roi2)
 
-    if ((roi2[0]) or (roi2[1]) or (roi2[2]) or (roi2[3]) )< 0:
+    if ((roi2[0] <0) or (roi2[1]<0) or (roi2[2]<0) or (roi2[3])<0 ):
       print("Out of region")
     else:
+      print("good")
       roi=roi2
   else:
     print("shape: ",bin_img.shape)
     roi=[0,0,bin_img.shape[1],bin_img.shape[0]]
     print(roi)
+
+  if (args.bin_segmentation==0) & (args.agnostic_segmentation==1):
+    roi=[roi[0]+int(round(args.off_x)), roi[1]-int(round(args.off_y)), roi[2]+int(round(args.off_x)), roi[3]-int(round(args.off_y))]
 
   if args.show_obj:
     try:
@@ -365,16 +480,21 @@ def main():
 
   
   fig = plt.figure(figsize=(10, 10))
-  ax = fig.add_subplot(1, 1, 1)
-  ax.imshow(bin_img[roi[1]:roi[3], roi[0]:roi[2]])
+  ax = fig.add_subplot(1, 2, 1)
+  print(roi)
+  #print("obj shape rgb",bin_img[roi[1]-round(args.off_y):roi[3]-round(args.off_y), roi[0]+round(args.off_x):roi[2]+round(args.off_x)].shape )
+  if (args.bin_segmentation==0) & (args.agnostic_segmentation==1):
+    ax.imshow(bin_img[roi[1]+int(round(args.off_y)):roi[3]+int(round(args.off_y)), roi[0]-int(round(args.off_x)):roi[2]-int(round(args.off_x))])
+  else:
+    ax.imshow(bin_img[roi[1]:roi[3], roi[0]:roi[2]])   
   ax.set_title('rgb')
   ax.axis('off')
-  plt.show()
+  #plt.show()
 
   bin_img_depth=deepcopy(bin_img_depth)
   if args.agnostic_segmentation:
     if args.use_masks:
-      kernel_size=int((roi2[3]-roi2[1])/args.mask_factor)
+      kernel_size=int((roi[3]-roi[1])/args.mask_factor)
       kernel = np.ones((kernel_size,kernel_size), np.uint8)
       mask=masks[args.box_index].cpu().detach().numpy()
       print(mask.shape)
@@ -388,18 +508,20 @@ def main():
           if not mask[j][i]:
               bin_img_depth[j][i] = d
 
-  fig = plt.figure(figsize=(10, 10))
-  ax = fig.add_subplot(1, 1, 1)
+  #fig = plt.figure(figsize=(10, 10))
+  ax = fig.add_subplot(1, 2, 2)
+  print("obj shape depth",bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]].shape )
   ax.imshow(bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]], cmap='gray')
   ax.set_title('Depth')
   ax.axis('off')
   plt.show()
 
 
-  points_out, ang_out, width_out=predict_grasps(bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]], filters=(5.0, 3.0, 2.0), width_scale=120, preprocess=args.preprocess)
+  points_out, ang_out, width_out, depth_crop=predict_grasps(bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]], filters=(5.0, 3.0, 2.0), width_scale=80, preprocess=args.preprocess, new_size=300)
   points_out = cv2.resize(points_out, (roi[2]-roi[0], roi[3]-roi[1]))
   ang_out = cv2.resize(ang_out, (roi[2]-roi[0], roi[3]-roi[1]))
   width_out = cv2.resize(width_out, (roi[2]-roi[0], roi[3]-roi[1]))
+  depth_crop=cv2.resize(depth_crop, (roi[2]-roi[0], roi[3]-roi[1]))
 
   fig = plt.figure(figsize=(10, 10))
   ax = fig.add_subplot(1, 1, 1)
@@ -416,7 +538,8 @@ def main():
 
   fig = plt.figure(figsize=(10, 10))
   ax = fig.add_subplot(2, 2, 1)
-  depth_img_2=bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]]
+  #depth_img_2=bin_img_depth[roi[1]:roi[3], roi[0]:roi[2]]
+  depth_img_2=depth_crop.copy()
   for g in grasps:
     depth_img_2=draw_angled_rec(g["pix"][1], g["pix"][0], g["width"], g["width"]/2, g["ang"], color=(0.1,0.1,0), img=depth_img_2)
   ax.imshow(depth_img_2, cmap='gray')
@@ -430,10 +553,14 @@ def main():
   ax.axis('off')
 
   ax = fig.add_subplot(2, 2, 3)
-  plot = ax.imshow(ang_out, cmap='hsv', vmin=-np.pi / 2, vmax=np.pi / 2)
-  ax.set_title('Angle')
-  plt.colorbar(plot)
+  plot= ax.imshow(bin_img[roi[1]:roi[3], roi[0]:roi[2]])
+  ax.set_title('rgb')
   ax.axis('off')
+
+  #plot = ax.imshow(ang_out, cmap='hsv', vmin=-np.pi / 2, vmax=np.pi / 2)
+  #ax.set_title('Angle')
+  #plt.colorbar(plot)
+  #ax.axis('off')
 
   ax = fig.add_subplot(2, 2, 4)
   plot = ax.imshow(width_out, cmap='hsv', vmin=0, vmax=150)
@@ -444,12 +571,16 @@ def main():
 
   #Transform to distance
   x, y, z, ang, rwidth =rvalues(grasps[0], depth_img, roi, detections)
+
   print("x: ", x)
   print("y: ", y)
   print("z: ", z)
   print("ang: ", ang)
   print("rwidth: ", rwidth)
-
+  Pcam=np.array([x, y, 1, 1])
+  Pori=Tcam.dot(Pcam)
+  print("x2: ",Pori[0])
+  print("y2: ",Pori[1])
   #Publish data
   if args.load_files==0:
     cmd_msg = Float32MultiArray()
@@ -463,5 +594,8 @@ def main():
   #q = tft.quaternion_from_euler(0, 1.5, ang)
 
 if __name__ == '__main__':
-    main()
+    detection_model=create_retina(num_classes=1, pipeline_config = 'models/retina_config/config/pipeline.config', checkpoint_path = "models/retina_config/checkpoint/ckpt-1") 
+    while True:
+      input("Enter to continue:")
+      main()
     sys.exit(0)
